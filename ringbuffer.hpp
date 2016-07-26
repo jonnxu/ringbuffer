@@ -23,43 +23,78 @@
 #ifndef DSA_RINGBUFFER_HPP
 #define DSA_RINGBUFFER_HPP
 
-// note:
-//      This implementation is NOT threadsafe. Please see
-//      https://github.com/daltonwoodard/atomic_ringbuffer.git
-//      for a thread-safe version implemented with C++ atomic
-//      primitives.
-//
-// note:
-//      While this type is backed by a std::array object,
-//      and can therefore exist entirely on the stack, it
-//      is possible for this type to be heap allocated so
-//      as to avoid stack size limitations. The use of the
-//      std::array backing object is to provide data locality
-//      locality of the buffered data with respect to the
-//      managing ringbuffer object.
-//
-//  note:
-//      If and only if the stored object type T has strong exception safe
-//      constructors is the following guaranteed:
-//
-//      If this object is successfull constructed, then throughout the
-//      object's lifetime:
-//
-//          i.  all view operations (front/back) are guaranteed as nothrow.
-//          ii. read opeartions provide the basic exception safety guarantee;
-//
-//     Notice that the read operations modify the data structure (by removing
-//     elements from the front); hence they are, in actuallity, writes.
-//
-//     All of the above are documented as such in source. 
-
 #include <array>        // std::array
-#include <type_traits>  // std::remove_cv
-#include <utility>      // std::forward, std::move
+#include <type_traits>  // std::remove_cv, std::is_nothrow_move_assignable,
+                        // std::is_nothrow_copy_assignable,
+                        // std::is_trivially_destructible
+#include <utility>      // std::forward, std::move, std::swap
 
 
 namespace dsa
 {
+    /*
+     *  Description
+     *  -----------
+     *
+     *  dsa::ringbuffer <> is an implementation of an STL-style circular buffer.
+     *
+     *  The size of the buffer is fixed by the template parameter N. Please see
+     *  https://github.com/daltonwoodard/dynamic_ringbuffer.git for a resizeable
+     *  version.
+     *
+     *  This implementation is NOT threadsafe. Please see
+     *  https://github.com/daltonwoodard/atomic_ringbuffer.git for a thread-safe
+     *  version implemented with C++ atomic primitives.
+     *
+     *  If and only if the stored object type T has strong exception safe
+     *  constructors is the following guaranteed:
+     *
+     *  If this object is successfull constructed, then throughout the
+     *  object's lifetime:
+     *
+     *      i.  all view operations (front/back) are guaranteed as nothrow.
+     *      ii. read opeartions provide the basic exception safety guarantee;
+     *
+     *  Notice that the read operations modify the data structure (by removing
+     *  elements from the front); hence they are, in actuallity, writes.
+     *
+     *  Template Parameters
+     *  -------------------
+     *  - T: the object type to be buffered. This type does *not* have to be
+     *  default constructable.
+     *
+     *  - N: the maximum number of elements for the buffer to hold; the number N
+     *  must be nonzero.
+     *
+     *  Member Types
+     *  ------------
+     *  - value_type:      std::remove_cv <T>::type;
+     *  - size_type:       std::size_t;
+     *  - difference_type: std::ptrdiff_t;
+     *  - pointer:         value_type *;
+     *  - const_pointer:   value_type const *;
+     *  - reference:       value_type &;
+     *  - const_reference: value_type const &;
+     *
+     *  - iterator:               models RandomAccessIterator
+     *  - const_iterator:         models RandomAccessIterator
+     *  - reverse_iterator:       std::reverse_iterator <iterator>;
+     *  - const_reverse_iterator: std::reverse_iterator <const_iterator>;
+     *
+     *  Member Functions
+     *  ----------------
+     *  - front: access the first element
+     *  - back:  access the last element
+     *
+     *  - empty: checks whether the buffer is empty
+     *  - size:  returns the number of buffered elements
+     *
+     *  - push:    inserts an element at the end
+     *  - emplace: constructs an element in-place at the end
+     *  - pop:     removes the first element
+     *
+     *  - swap: swaps the contents. Template typename T must be Swappable.
+     */
     template <typename T, std::size_t N>
     class ringbuffer
     {
@@ -90,51 +125,42 @@ namespace dsa
         backing_pointer const _first = &_buffer [0];
         backing_pointer const _last  = &_buffer [N - 1];
 
-        template <typename U>
+        template <typename U, std::size_t BuffSize>
         class iterator_impl;
 
-        iterator_impl <T> _write_location {
+        iterator_impl <T, N> _write_location {
             reinterpret_cast <unqualified_pointer> (&_buffer [0]),
             reinterpret_cast <unqualified_pointer> (_first),
             reinterpret_cast <unqualified_pointer> (_last)
         };
 
-        iterator_impl <T> _read_location  {
+        iterator_impl <T, N> _read_location  {
             reinterpret_cast <unqualified_pointer> (&_buffer [0]),
             reinterpret_cast <unqualified_pointer> (_first),
             reinterpret_cast <unqualified_pointer> (_last)
         };
 
-        template <typename U>
+        template <typename U, std::size_t BuffSize>
         class iterator_impl : public std::iterator <
-            std::random_access_iterator_tag,
-            typename std::remove_cv <U>::type,
-            std::ptrdiff_t,
-            typename std::remove_cv <U>::type *,
-            typename std::remove_cv <U>::type &
+            std::random_access_iterator_tag, U, std::ptrdiff_t, U *, U &
         >
         {
         private:
-            using unqualified_type = typename std::remove_cv <U>::type;
             using iter_type = std::iterator <
-                std::random_access_iterator_tag,
-                unqualified_type,
-                std::ptrdiff_t,
-                unqualified_type *,
-                unqualified_type &
+                std::random_access_iterator_tag, U, std::ptrdiff_t, U *, U &
             >;
 
             U * _iter;
-            unqualified_type * const _first;
-            unqualified_type * const _last;
+            U * const _first;
+            U * const _last;
 
         public:
             using difference_type   = typename iter_type::difference_type;
             using value_type        = typename iter_type::value_type;
-            using pointer           = value_type *;
-            using const_pointer     = value_type const *;
-            using reference         = value_type &;
-            using const_reference   = value_type const &;
+            using pointer           = typename iter_type::pointer;
+            using const_pointer     = typename iter_type::const_pointer;
+            using reference         = typename iter_type::reference;
+            using const_reference   = typename iter_type::const_reference;
             using iterator_category = typename iter_type::iterator_category;
 
             iterator_impl (void) = delete;
@@ -146,7 +172,7 @@ namespace dsa
                 , _last  {last}
             {}
 
-            void swap (iterator_impl & other)
+            void swap (iterator_impl & other) noexcept
             {
                 std::swap (this->_iter, other._iter);
                 std::swap (this->_first, other._first);
@@ -244,57 +270,93 @@ namespace dsa
 
             difference_type operator- (iterator_impl const & rhs) const
             {
-                return _iter - rhs._iter;
+                /* normal configuration -- non-wraparound case */
+                if (_first < _last) {
+                    return this->_iter - rhs._iter;
+                /*
+                 * _last is behind _first (in the address space) --
+                 * wraparound case, so the space from _last to _first
+                 * is uninitialized.
+                 */
+                } else {
+                    /*
+                     * three cases:
+                     *  i.    both iters are above _first
+                     *  ii.   both iters are below _last
+                     *  iii.  iters are split above _first and below _last
+                     *      a. this is above _first and rhs is below _last
+                     *      b. rhs is above _first and this is below _last
+                     */
+                    if (_first <= this->_iter && _first <= rhs._iter) {
+                        return this->_iter - rhs._iter;
+                    } else if (this->_iter <= _last && rhs._iter <= _last) {
+                        return this->_iter - rhs._iter;
+                    } else if (_first <= this->_iter && rhs._iter <= _last) {
+                        return (this->_iter - rhs._iter) -
+                            static_cast <difference_type> (BuffSize);
+                    /* if (_first <= rhs._iter && this->_iter <= _last) */
+                    } else {
+                        return static_cast <difference_type> (BuffSize) -
+                            (rhs._iter - this->_iter);
+                    }
+                }
             }
 
             bool operator== (iterator_impl const & rhs) const
             {
-                return _iter == rhs._iter;
+                return this->_iter == rhs._iter;
             }
 
             bool operator!= (iterator_impl const & rhs) const
             {
-                return _iter != rhs._iter;
+                return this->_iter != rhs._iter;
             }
 
             bool operator< (iterator_impl const & rhs) const
             {
-                return _iter < rhs._iter;
+                /* locigal: return this->_iter < rhs._iter; */
+                return rhs - *this > 0;
             }
 
             bool operator> (iterator_impl const & rhs) const
             {
-                return _iter > rhs._iter;
+                /* locigal: return _iter > rhs._iter; */
+                return *this - rhs > 0;
             }
 
             bool operator<= (iterator_impl const & rhs) const
             {
-                return _iter <= rhs._iter;
+                /* locigal: return _iter <= rhs._iter; */
+                if (*this == rhs) {
+                    return true;
+                } else {
+                    return *this < rhs;
+                }
             }
 
             bool operator>= (iterator_impl const & rhs) const
             {
-                return _iter >= rhs._iter;
+                /* locigal: return _iter >= rhs._iter; */
+                if (*this == rhs) {
+                    return true;
+                } else {
+                    return *this > rhs;
+                }
             }
 
-            reference operator* (void)
+            reference operator* (void) const
             {
                 return *_iter;
             }
 
-            const_reference operator* (void) const
-            {
-                return *_iter;
-            }
-
-            reference operator[] (difference_type n)
+            reference operator[] (difference_type n) const
             {
                 return *(*this + n);
             }
 
-            const_reference operator[] (difference_type n) const
+            pointer addressof (void) const
             {
-                return *(*this + n);
+                return _iter;
             }
         };
 
@@ -307,8 +369,8 @@ namespace dsa
         using reference       = unqualified_reference;
         using const_reference = unqualified_const_reference;
 
-        using iterator        = iterator_impl <T>;
-        using const_iterator  = iterator_impl <T const>;
+        using iterator        = iterator_impl <T, N>;
+        using const_iterator  = iterator_impl <T const, N>;
         using reverse_iterator       = std::reverse_iterator <iterator>;
         using const_reverse_iterator = std::reverse_iterator <const_iterator>;
 
@@ -318,22 +380,133 @@ namespace dsa
         {}
 
         ringbuffer (ringbuffer const & other)
+            noexcept (std::is_nothrow_copy_assignable <T>::value)
             : _buffer   {}
             , _buffered {other._buffered}
         {
             auto ti = this->_write_location;
             auto oi = other.cbegin ();
             while (oi != other.cend ()) {
-                *ti++ = *oi++;
+                *ti = *oi;
+                ti += 1;
+                oi += 1;
             }
 
             this->_write_location += this->_buffered;
         }
 
-        ~ringbuffer (void) noexcept (noexcept (~T ()))
+        ringbuffer (ringbuffer && other)
+            noexcept (std::is_nothrow_move_assignable <T>::value)
+            : _buffer   {}
+            , _buffered {other._buffered}
+        {
+            auto ti = this->_write_location;
+            auto oi = other.cbegin ();
+            while (oi != other.cend ()) {
+                *ti = std::move (*oi);
+                ti += 1;
+                oi += 1;
+            }
+
+            this->_write_location += this->_buffered;
+        }
+
+    private:
+        template <
+            typename U = T,
+            typename std::enable_if <
+                std::is_trivially_destructible <U>::value
+            >::type = 0
+        >
+        static void destruct_element (U &) noexcept
+        {
+            /* no-op */
+        }
+
+        template <
+            typename U = T,
+            typename std::enable_if <
+                not std::is_trivially_destructible <U>::value
+            >::type = 0
+        >
+        static void destruct_element (U & u)
+            noexcept (std::is_nothrow_destructible <U>::value)
+        {
+            u.~U ();
+        }
+
+    public:
+        ~ringbuffer (void)
+            noexcept (noexcept (destruct_element (std::declval <T &> ())))
         {
             for (auto it = _read_location; it != _write_location; ++it) {
-                (*it).~T ();
+                destruct_element (*it);
+            }
+        }
+
+        /* swaps the contents of the buffer */
+        void swap (ringbuffer & other)
+            noexcept (
+                std::is_nothrow_move_assignable <T>::value &&
+                std::is_nothrow_move_constructible <T>::value &&
+                std::is_nothrow_destructible <T>::value
+            )
+        {
+            using std::swap;
+
+            auto ti {this->begin ()};
+            auto oi {other.begin ()};
+
+            /*
+             * past-the-end iterators in this implementation point at
+             * uinitialized memory, and so once we have swapped as many
+             * valid objects as possible we must revert to performiing
+             * in-place construction of elements into the correct locations.
+             */
+            if (this->_buffered <= other._buffered) {
+                while (ti != this->end ()) {
+                    swap (*ti, *oi);
+                    ti += 1;
+                    oi += 1;
+                }
+
+                while (oi != other.end ()) {
+                    auto addr {ti.addressof ()};
+                    new (addr) T {std::move (*oi)};
+                    destruct_element (*oi);
+                    ti += 1;
+                    oi += 1;
+                }
+            } else {
+                while (oi != other.end ()) {
+                    swap (*oi, *ti);
+                    oi += 1;
+                    ti += 1;
+                }
+
+                while (ti != this->end ()) {
+                    auto addr {oi.addressof ()};
+                    new (addr) T {std::move (*ti)};
+                    destruct_element (*ti);
+                    oi += 1;
+                    ti += 1;
+                }
+            }
+
+            /*
+             * adjust iterators for this and other:
+             * - read locations for each stay the same
+             * - write locations are adjusted by the difference between
+             *   buffered elements of each.
+             */
+            {
+                auto const td {this->_write_location - this->_read_location};
+                auto const od {other._write_location - other._read_location};
+
+                this->_write_location += (od - td);
+                other._write_location += (td - od);
+
+                std::swap (this->_buffered, other._buffered);
             }
         }
 
