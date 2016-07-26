@@ -1,12 +1,17 @@
 //
 // dsa is a utility library of data structures and algorithms built with C++11.
-// This file (spinlock.hpp) is part of the dsa project.
+// This file (ringbuffer.hpp) is part of the dsa project.
 //
-// spinlock; a user-space spinlock implementation for C++11 or later.
+// ringbuffer; a fixed-size implementation of an STL-style circular buffer for
+// C++11 and later.
+//
+// A description of the circular buffer data structure can be found here:
+//
+//      https://en.wikipedia.org/wiki/Circular_buffer
 //
 // author: Dalton Woodard
 // contact: daltonmwoodard@gmail.com
-// repository: https://github.com/daltonwoodard/spinlock.hpp
+// repository: https://github.com/daltonwoodard/ringbuffer.git
 // license:
 //
 // Copyright (c) 2016 DaltonWoodard. See the COPYRIGHT.md file at the top-level
@@ -24,19 +29,31 @@
 #define DSA_RINGBUFFER_HPP
 
 #include <array>        // std::array
+#include <exception>    // std::logic_error
 #include <type_traits>  // std::remove_cv, std::is_nothrow_move_assignable,
                         // std::is_nothrow_copy_assignable,
-                        // std::is_trivially_destructible
+                        // std::is_trivially_destructible,
+                        // std::is_nothrow_destructible
 #include <utility>      // std::forward, std::move, std::swap
 
 
 namespace dsa
 {
+    enum class overwrite_policy
+    {
+        no_overwrite,
+        overwrite
+    };
+
     /*
      *  Description
      *  -----------
      *
      *  dsa::ringbuffer <> is an implementation of an STL-style circular buffer.
+     *
+     *  A description of the circular buffer data structure can be found here:
+     *
+     *      https://en.wikipedia.org/wiki/Circular_buffer
      *
      *  The size of the buffer is fixed by the template parameter N. Please see
      *  https://github.com/daltonwoodard/dynamic_ringbuffer.git for a resizeable
@@ -52,8 +69,8 @@ namespace dsa
      *  If this object is successfull constructed, then throughout the
      *  object's lifetime:
      *
-     *      i.  all view operations (front/back) are guaranteed as nothrow.
-     *      ii. read opeartions provide the basic exception safety guarantee;
+     *      i.  all view operations are guaranteed as nothrow
+     *      ii. write operations provide the strong exception safety guarantee
      *
      *  Notice that the read operations modify the data structure (by removing
      *  elements from the front); hence they are, in actuallity, writes.
@@ -83,17 +100,31 @@ namespace dsa
      *
      *  Member Functions
      *  ----------------
-     *  - front: access the first element
-     *  - back:  access the last element
+     *  - front:      access the first element
+     *  - back:       access the last element
      *
      *  - empty: checks whether the buffer is empty
      *  - size:  returns the number of buffered elements
      *
-     *  - push:    inserts an element at the end
-     *  - emplace: constructs an element in-place at the end
-     *  - pop:     removes the first element
+     *  - set_overwrite_policy: sets the overwrite policy for the container
+     *  - get_overwrite_policy: returns the overwrite policy for the container
+     *
+     *  - clear:                clears the contents of the buffer
+     *  - push/push_back:       inserts an element at the end
+     *  - emplace/emplace_back: constructs an element in-place at the end
+     *  - pop/pop_front:        removes the first element
      *
      *  - swap: swaps the contents. Template typename T must be Swappable.
+     *
+     *  note:
+    *       The behavior of push_back and emplace_back when capacity == 0 is
+     *      determined by the current overwrite_policy of the ringbuffer
+     *      [default: dsa::overwrite_policy::no_overwrite]. If the policy enum
+     *      flag is equal to dsa::overwrite_policy::no_overwrite then no
+     *      operation on the structure is performed and an exception of type
+     *      std::logic_error is thrown. If the policy enum flag is
+     *      dsa::overwrite_policy::overwrite then the first element
+     *      (given by front ()) of the buffer is overwritten by the new value.
      */
     template <typename T, std::size_t N>
     class ringbuffer
@@ -125,17 +156,29 @@ namespace dsa
         backing_pointer const _first = &_buffer [0];
         backing_pointer const _last  = &_buffer [N - 1];
 
+        enum overwrite_policy _owpolicy;
+
         template <typename U, std::size_t BuffSize>
         class iterator_impl;
 
+        /*
+         * The iterators _write_location and _read_location are priviledged in
+         * that the logical space they work in is the whole buffer. They are
+         * later used to represent the bounding logical regions when creating
+         * iterators to the buffer.
+         */
         iterator_impl <T, N> _write_location {
             reinterpret_cast <unqualified_pointer> (&_buffer [0]),
+            reinterpret_cast <unqualified_pointer> (_first),
+            reinterpret_cast <unqualified_pointer> (_last),
             reinterpret_cast <unqualified_pointer> (_first),
             reinterpret_cast <unqualified_pointer> (_last)
         };
 
         iterator_impl <T, N> _read_location  {
             reinterpret_cast <unqualified_pointer> (&_buffer [0]),
+            reinterpret_cast <unqualified_pointer> (_first),
+            reinterpret_cast <unqualified_pointer> (_last),
             reinterpret_cast <unqualified_pointer> (_first),
             reinterpret_cast <unqualified_pointer> (_last)
         };
@@ -151,25 +194,44 @@ namespace dsa
             >;
 
             U * _iter;
-            U * const _first;
-            U * const _last;
+
+            /*
+             * these pointers bound the logical region with the current state of
+             * the ciruclar buffer.
+             */
+            U * const _lfirst;
+            U * const _llast;
+
+            /* these pointers bound the address space of the backing buffer */
+            U * const _rfirst;
+            U * const _rlast;
+
+            /* checks whether the logical region is actually contiguous */
+            bool logical_region_is_contiguous (void) const noexcept
+            {
+                return _lfirst <= _llast;
+            }
 
         public:
             using difference_type   = typename iter_type::difference_type;
             using value_type        = typename iter_type::value_type;
             using pointer           = typename iter_type::pointer;
-            using const_pointer     = typename iter_type::const_pointer;
             using reference         = typename iter_type::reference;
-            using const_reference   = typename iter_type::const_reference;
             using iterator_category = typename iter_type::iterator_category;
 
             iterator_impl (void) = delete;
 
-            iterator_impl (pointer p, pointer first, pointer last)
+            iterator_impl (pointer p,
+                           pointer logical_first,
+                           pointer logical_last,
+                           pointer real_first,
+                           pointer real_last)
                 noexcept
-                : _iter  {p}
-                , _first {first}
-                , _last  {last}
+                : _iter   {p}
+                , _lfirst {logical_first}
+                , _llast  {logical_last}
+                , _rfirst {real_first}
+                , _rlast  {real_last}
             {}
 
             void swap (iterator_impl & other) noexcept
@@ -181,8 +243,8 @@ namespace dsa
 
             iterator_impl & operator++ (void)
             {
-                if (_iter == _last) {
-                    _iter = _first;
+                if (_iter == _llast) {
+                    _iter = _lfirst;
                 } else {
                     _iter += 1;
                 }
@@ -192,8 +254,8 @@ namespace dsa
 
             iterator_impl & operator-- (void)
             {
-                if (_iter == _first) {
-                    _iter = _last;
+                if (_iter == _lfirst) {
+                    _iter = _llast;
                 } else {
                     _iter -= 1;
                 }
@@ -205,8 +267,8 @@ namespace dsa
             {
                 auto const tmp {*this};
 
-                if (_iter == _last) {
-                    _iter = _first;
+                if (_iter == _llast) {
+                    _iter = _lfirst;
                 } else {
                     _iter += 1;
                 }
@@ -218,8 +280,8 @@ namespace dsa
             {
                 auto const tmp {*this};
 
-                if (_iter == _first) {
-                    _iter = _last;
+                if (_iter == _lfirst) {
+                    _iter = _llast;
                 } else {
                     _iter -= 1;
                 }
@@ -227,24 +289,42 @@ namespace dsa
                 return tmp;
             }
 
+            /*
+             * the parameter n is assumed to be valid; that is, such that
+             * the resulting pointer after [_iter += n] remains logically
+             * bound between _lfirst and _llast.
+             */
             iterator_impl & operator+= (difference_type n)
             {
-                if (n >= N || -n >= N) {
-                    n = n % N;
-                }
+                /*
+                 * two cases:
+                 *  i.  _lfirst <= _llast in the address space (non-wraparound)
+                 *  ii. _llast < _lfirst in the address space (wraparound)
+                 *      a. this is above _lfirst
+                 *      b. this is below _llast
+                 */
 
-                if (n >= 0) {
-                    if (_iter > _last - n) {
-                        _iter = _first + (n - 1 - (_last - _iter));
+                /* case i. */
+                if (this->logical_region_is_contiguous ()) {
+                    _iter += n;
+                /* cast ii.a. */
+                } else if (_lfirst <= _iter) {
+                    /* stays in-bounds */
+                    if (_iter + n <= _rlast) {
+                        _iter += n;
+                    /* overflow past-the-end (note: n > 0) */
                     } else {
-                        _iter = _iter + n;
+                        _iter = _rfirst + (n - 1 - (_rlast - _iter));
                     }
+                /* cast ii.b. */
                 } else {
-                    auto const m {-n};
-                    if (_iter < _first + m) {
-                        _iter = _last - (m - 1 - (_iter - _first));
+                    /* stays in-bounds */
+                    if (_iter + n >= _rfirst) {
+                        _iter += n;
+                    /* underflows before-the-beginning (note: n < 0) */
                     } else {
-                        _iter = _iter - m;
+                        auto const m {-n};
+                        _iter = _rlast - (m - 1 - (_iter - _rfirst));
                     }
                 }
 
@@ -377,12 +457,14 @@ namespace dsa
         ringbuffer (void) noexcept
             : _buffer   {}
             , _buffered {0}
+            , _owpolicy {overwrite_policy::no_overwrite}
         {}
 
         ringbuffer (ringbuffer const & other)
             noexcept (std::is_nothrow_copy_assignable <T>::value)
             : _buffer   {}
             , _buffered {other._buffered}
+            , _owpolicy {other._owpolicy}
         {
             auto ti = this->_write_location;
             auto oi = other.cbegin ();
@@ -399,6 +481,7 @@ namespace dsa
             noexcept (std::is_nothrow_move_assignable <T>::value)
             : _buffer   {}
             , _buffered {other._buffered}
+            , _owpolicy {other._owpolicy}
         {
             auto ti = this->_write_location;
             auto oi = other.cbegin ();
@@ -414,9 +497,9 @@ namespace dsa
     private:
         template <
             typename U = T,
-            typename std::enable_if <
+            typename = typename std::enable_if <
                 std::is_trivially_destructible <U>::value
-            >::type = 0
+            >::type
         >
         static void destruct_element (U &) noexcept
         {
@@ -425,9 +508,10 @@ namespace dsa
 
         template <
             typename U = T,
-            typename std::enable_if <
+            typename = typename std::enable_if <
                 not std::is_trivially_destructible <U>::value
-            >::type = 0
+            >::type,
+            bool /* no redeclare */ = bool {}
         >
         static void destruct_element (U & u)
             noexcept (std::is_nothrow_destructible <U>::value)
@@ -439,8 +523,12 @@ namespace dsa
         ~ringbuffer (void)
             noexcept (noexcept (destruct_element (std::declval <T &> ())))
         {
-            for (auto it = _read_location; it != _write_location; ++it) {
+            auto it {this->end () - 1};
+
+            while (_buffered > 0) {
                 destruct_element (*it);
+                it -= 1;
+                _buffered -= 1;
             }
         }
 
@@ -452,44 +540,56 @@ namespace dsa
                 std::is_nothrow_destructible <T>::value
             )
         {
-            using std::swap;
+            /* swap elements */
+            {
+                using std::swap;
 
-            auto ti {this->begin ()};
-            auto oi {other.begin ()};
+                auto ti {this->begin ()};
+                auto oi {other.begin ()};
 
-            /*
-             * past-the-end iterators in this implementation point at
-             * uinitialized memory, and so once we have swapped as many
-             * valid objects as possible we must revert to performiing
-             * in-place construction of elements into the correct locations.
-             */
-            if (this->_buffered <= other._buffered) {
-                while (ti != this->end ()) {
-                    swap (*ti, *oi);
-                    ti += 1;
-                    oi += 1;
-                }
+                auto tb {this->_buffered};
+                auto ob {other._buffered};
 
-                while (oi != other.end ()) {
-                    auto addr {ti.addressof ()};
-                    new (addr) T {std::move (*oi)};
-                    destruct_element (*oi);
-                    ti += 1;
-                    oi += 1;
-                }
-            } else {
-                while (oi != other.end ()) {
-                    swap (*oi, *ti);
-                    oi += 1;
-                    ti += 1;
-                }
+                /*
+                 * past-the-end iterators in this implementation point at
+                 * uinitialized memory, and so once we have swapped as many
+                 * valid objects as possible we must revert to performiing
+                 * in-place construction of elements into the correct locations.
+                 */
+                if (tb <= ob) {
+                    while (tb) {
+                        swap (*ti, *oi);
+                        ti += 1;
+                        oi += 1;
+                        tb -= 1;
+                        ob -= 1;
+                    }
 
-                while (ti != this->end ()) {
-                    auto addr {oi.addressof ()};
-                    new (addr) T {std::move (*ti)};
-                    destruct_element (*ti);
-                    oi += 1;
-                    ti += 1;
+                    while (ob) {
+                        auto addr {ti.addressof ()};
+                        new (addr) T {std::move (*oi)};
+                        destruct_element (*oi);
+                        ti += 1;
+                        oi += 1;
+                        ob -= 1;
+                    }
+                } else {
+                    while (ob) {
+                        swap (*oi, *ti);
+                        oi += 1;
+                        ti += 1;
+                        ob -= 1;
+                        tb -= 1;
+                    }
+
+                    while (tb) {
+                        auto addr {oi.addressof ()};
+                        new (addr) T {std::move (*ti)};
+                        destruct_element (*ti);
+                        oi += 1;
+                        ti += 1;
+                        tb -= 1;
+                    }
                 }
             }
 
@@ -507,6 +607,7 @@ namespace dsa
                 other._write_location += (td - od);
 
                 std::swap (this->_buffered, other._buffered);
+                std::swap (this->_owpolicy, other._owpolicy);
             }
         }
 
@@ -516,32 +617,52 @@ namespace dsa
             return _buffered != 0;
         }
 
-        /* returns the current number of elements stored in the buffer */
+        /* returns the number of elements stored in the buffer */
         std::size_t size (void) const noexcept
         {
             return _buffered;
         }
 
-        // obtain the remaining capacity to add objects
-        // to buffer.
-        //
-        // -- nothrow
-        //
+        /* returns the number of available spaces to add elements */
         std::size_t capacity (void) const noexcept
         {
             return N - _buffered;
         }
 
+        /* set the overwrite policy for the buffer */
+        void set_overwrite_policy (enum overwrite_policy pol) noexcept
+        {
+            this->_owpolicy = pol;
+        }
+
+        /* returns the overwrite policy for the buffer */
+        enum overwrite_policy get_overwrite_policy (void) const noexcept
+        {
+            return this->_owpolicy;
+        }
+
         /* returns an iterator the start of the buffer */
         iterator begin (void) noexcept
         {
-            return _read_location;
+            return iterator {
+                _read_location.addressof (),
+                _read_location.addressof (),
+                _write_location.addressof (),
+                reinterpret_cast <pointer> (_first),
+                reinterpret_cast <pointer> (_last)
+            };
         }
 
         /* returns an iterator the end of the buffer */
         iterator end (void) noexcept
         {
-            return _write_location;
+            return iterator {
+                (_write_location + 1).addressof (),
+                _read_location.addressof (),
+                _write_location.addressof (),
+                reinterpret_cast <pointer> (_first),
+                reinterpret_cast <pointer> (_last)
+            };
         }
 
         /* returns a const iterator the start of the buffer */
@@ -559,13 +680,25 @@ namespace dsa
         /* returns a const iterator the start of the buffer */
         const_iterator cbegin (void) const noexcept
         {
-            return const_iterator {&*_read_location, _first, _last};
+            return const_iterator {
+                _read_location.addressof (),
+                _read_location.addressof (),
+                _write_location.addressof (),
+                reinterpret_cast <pointer> (_first),
+                reinterpret_cast <pointer> (_last)
+            };
         }
 
         /* returns a const iterator the end of the buffer */
         const_iterator cend (void) const noexcept
         {
-            return const_iterator {&*_write_location, _first, _last};
+            return const_iterator {
+                (_write_location + 1).addressof (),
+                _read_location.addressof (),
+                _write_location.addressof (),
+                reinterpret_cast <pointer> (_first),
+                reinterpret_cast <pointer> (_last)
+            };
         }
 
         /* returns a reverse iterator to the start of the reversed buffer */
@@ -611,80 +744,156 @@ namespace dsa
         /* returns a reference to the first element in the buffer */
         reference front (void) noexcept
         {
-            return _read_location [0];
+            return *_read_location;
         }
 
         /* returns a reference to the first element in the buffer */
         const_reference front (void) const noexcept
         {
-            return _read_location [0];
+            return *_read_location;
         }
 
         /* returns a reference to the last element in the buffer */
         reference back (void) noexcept
         {
-            if (_buffered) {
+            if (_buffered > 0) {
                 return _read_location [_buffered - 1];
             } else {
-                return _read_location [0];
+                return *_read_location;
             }
         }
 
         /* returns a reference to the last element in the buffer */
         const_reference back (void) const noexcept
         {
-            if (_buffered) {
+            if (_buffered > 0) {
                 return _read_location [_buffered - 1];
             } else {
-                return _read_location [0];
+                return *_read_location;
             }
         }
 
         /*
-         * adds an object to the buffer if room is available; throws an
-         * exception of type std::runtime_error if no room is available in the
-         * buffer.
+         * clears the contents of the buffer; the elements are guaranteed to be
+         * destructed in the reverse-order they were added.
+         */
+        void clear (void)
+            noexcept (noexcept (destruct_element (std::declval <T &> ())))
+        {
+            auto it {this->end () - 1};
+
+            while (_buffered > 0) {
+                destruct_element (*it);
+                it -= 1;
+                _buffered -= 1;
+            }
+
+            _write_location = _read_location;
+        }
+
+        /*
+         * Adds an object to the buffer if room is available.
+         *
+         * If no capacity is avaiable, then:
+         *      If the overwrite policy is set to no_overwrite this method
+         *      throws an exception of type std::logic_error.
+         *
+         *      If the overwrite policy is set to overwrite, this method
+         *      overwrites the first element of the buffer.
          */
         void push (value_type const & v)
         {
             if (_buffered < N) {
-                *_write_location = v;
+                auto const addr {_write_location.addressof ()};
+                new (addr) value_type {v};
                 _write_location += 1;
+                _buffered += 1;
+            } else if (_owpolicy == overwrite_policy::overwrite) {
+                auto const addr {_write_location.addressof ()};
+                destruct_element (*addr);
+                new (addr) value_type {v};
+                _write_location += 1;
+                _read_location += 1;
+                _buffered = N;
             } else {
-                throw std::runtime_error {"emplace on full buffer"};
+                throw std::logic_error {"push back on full buffer"};
             }
         }
 
         /*
-         * adds an object to the buffer if room is available; throws an
-         * exception of type std::runtime_error if no room is available in the
-         * buffer.
+         * Adds an object to the buffer if room is available.
+         *
+         * If no capacity is avaiable, then:
+         *      If the overwrite policy is set to no_overwrite this method
+         *      throws an exception of type std::logic_error.
+         *
+         *      If the overwrite policy is set to overwrite, this method
+         *      overwrites the first element of the buffer.
          */
         void push (value_type && v)
         {
             if (_buffered < N) {
-                *_write_location = std::move (v);
+                auto const addr {_write_location.addressof ()};
+                new (addr) value_type {std::move (v)};
                 _write_location += 1;
+                _buffered += 1;
+            } else if (_owpolicy == overwrite_policy::overwrite) {
+                auto const addr {_write_location.addressof ()};
+                destruct_element (*addr);
+                new (addr) value_type {std::move (v)};
+                _write_location += 1;
+                _read_location += 1;
+                _buffered = N;
             } else {
-                throw std::runtime_error {"emplace on full buffer"};
+                throw std::logic_error {"push back on full buffer"};
             }
         }
 
+        void push_back (value_type const & v)
+        {
+            return this->push (v);
+        }
+
+        void push_back (value_type && v)
+        {
+            return this->push (std::move (v));
+        }
+
         /*
-         * adds an object to the buffer if room is available via in-place
-         * construction; throws an exception of type std::runtime_error  if no
-         * room is available in the buffer.
+         * Adds an object to the buffer if room is available using in-place
+         * construction.
+         *
+         * If no capacity is avaiable, then:
+         *      If the overwrite policy is set to no_overwrite this method
+         *      throws an exception of type std::logic_error.
+         *
+         *      If the overwrite policy is set to overwrite, this method
+         *      overwrites the first element of the buffer.
          */
         template <typename ... Args>
         void emplace (Args && ... args)
         {
             if (_buffered < N) {
-                auto const loc {&_write_location->data[0]};
-                new (loc) T {std::forward <Args> (args)...};
+                auto const addr {_write_location.addressof ()};
+                new (addr) value_type {std::forward <Args> (args)...};
                 _write_location += 1;
+                _buffered += 1;
+            } else if (_owpolicy == overwrite_policy::overwrite) {
+                auto const addr {_write_location.addressof ()};
+                destruct_element (*addr);
+                new (addr) value_type {std::forward <Args> (args)...};
+                _write_location += 1;
+                _read_location += 1;
+                _buffered = N;
             } else {
-                throw std::runtime_error {"emplace on full buffer"};
+                throw std::logic_error {"emplace back on full buffer"};
             }
+        }
+
+        template <typename ... Args>
+        void emplace_back (Args && ... args)
+        {
+            return this->emplace (std::forward <Args> (args)...);
         }
 
         /*
@@ -693,10 +902,9 @@ namespace dsa
          */
         void pop (void) noexcept (noexcept (~T ()))
         {
-            if (_buffered) {
-                auto & e {_read_location [0]};
-                e.~T ();
-                _read_location -= 1;
+            if (_buffered > 0) {
+                destruct_element (*_read_location);
+                _read_location += 1;
                 _buffered -= 1;
             }
         }
