@@ -23,9 +23,9 @@ daltonmwoodard@gmail.com
 
 ### official repository
 
-#### spinlock
+#### ringbuffer
 
-https://github.com/daltonwoodard/spinlock.git
+https://github.com/daltonwoodard/ringbuffer.git
 
 #### dsa
 
