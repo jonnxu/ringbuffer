@@ -462,37 +462,105 @@ namespace
         {}
 
         ringbuffer (ringbuffer const & other)
-            noexcept (std::is_nothrow_copy_assignable <T>::value)
+            noexcept (std::is_nothrow_copy_constructible <T>::value)
             : _buffer   {}
             , _buffered {other._buffered}
             , _owpolicy {other._owpolicy}
         {
-            auto ti = this->_write_location;
-            auto oi = other.cbegin ();
-            while (oi != other.cend ()) {
-                *ti = *oi;
+            auto ti {this->_write_location};
+            auto oi {other.cbegin ()};
+            auto ob {other._buffered};
+
+            while (ob) {
+                auto const addr {ti.addressof ()};
+                new (addr) T {*oi};
                 ti += 1;
                 oi += 1;
+                ob -= 1;
             }
 
             this->_write_location += this->_buffered;
         }
 
         ringbuffer (ringbuffer && other)
-            noexcept (std::is_nothrow_move_assignable <T>::value)
+            noexcept (std::is_nothrow_move_constructible <T>::value)
             : _buffer   {}
             , _buffered {other._buffered}
             , _owpolicy {other._owpolicy}
         {
-            auto ti = this->_write_location;
-            auto oi = other.cbegin ();
-            while (oi != other.cend ()) {
-                *ti = std::move (*oi);
+            auto ti {this->_write_location};
+            auto oi {other.cbegin ()};
+            auto ob {other._buffered};
+
+            while (ob) {
+                auto const addr {ti.addressof ()};
+                new (addr) T {std::move (*oi)};
                 ti += 1;
                 oi += 1;
+                ob -= 1;
             }
 
             this->_write_location += this->_buffered;
+        }
+
+        ringbuffer & operator= (ringbuffer const & other)
+            noexcept (
+                std::is_nothrow_copy_constructible <T>::value &&
+                noexcept (this->clear ())
+            )
+        {
+            this->clear ();
+            this->_owpolicy = other._owpolicy;
+
+            auto oi {other.cbegin ()};
+            auto ob {other._buffered};
+
+            while (ob) {
+                auto const addr {this->_write_location.addressof ()};
+                new (addr) T {*oi};
+                oi += 1;
+                ob -= 1;
+
+                /*
+                 * we leave this here in the case that T is not nothrow copy
+                 * constructible, so that in the case of an exception being
+                 * thrown the container remains in a consistent state.
+                 */
+                this->_buffered += 1;
+                this->_write_location += 1;
+            }
+
+            return *this;
+        }
+
+        ringbuffer & operator= (ringbuffer && other)
+            noexcept (
+                std::is_nothrow_move_constructible <T>::value &&
+                noexcept (this->clear ())
+            )
+        {
+            this->clear ();
+            this->_owpolicy = other._owpolicy;
+
+            auto oi {other.cbegin ()};
+            auto ob {other._buffered};
+
+            while (ob) {
+                auto const addr {this->_write_location.addressof ()};
+                new (addr) T {std::move (*oi)};
+                oi += 1;
+                ob -= 1;
+
+                /*
+                 * we leave this here in the case that T is not nothrow move
+                 * constructible, so that in the case of an exception being
+                 * thrown the container remains in a consistent state.
+                 */
+                this->_buffered += 1;
+                this->_write_location += 1;
+            }
+
+            return *this;
         }
 
     private:
@@ -567,7 +635,7 @@ namespace
                     }
 
                     while (ob) {
-                        auto addr {ti.addressof ()};
+                        auto const addr {ti.addressof ()};
                         new (addr) T {std::move (*oi)};
                         destruct_element (*oi);
                         ti += 1;
@@ -584,7 +652,7 @@ namespace
                     }
 
                     while (tb) {
-                        auto addr {oi.addressof ()};
+                        auto const addr {oi.addressof ()};
                         new (addr) T {std::move (*ti)};
                         destruct_element (*ti);
                         oi += 1;
@@ -910,6 +978,6 @@ namespace
             }
         }
     };
-} // namespace dsa
+}   // namespace dsa
 
 #endif // ifndef DSA_RINGBUFFER_HPP
