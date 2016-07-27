@@ -29,7 +29,7 @@
 #define DSA_RINGBUFFER_HPP
 
 #include <array>        // std::array
-#include <exception>    // std::logic_error
+#include <exception>    // std::runtime_error
 #include <type_traits>  // std::remove_cv, std::is_nothrow_move_assignable,
                         // std::is_nothrow_copy_assignable,
                         // std::is_trivially_destructible,
@@ -39,12 +39,6 @@
 
 namespace dsa
 {
-    enum class overwrite_policy
-    {
-        no_overwrite,
-        overwrite
-    };
-
 namespace
 {
     template <typename T>
@@ -90,6 +84,17 @@ namespace
      *  - N: the maximum number of elements for the buffer to hold; the number N
      *  must be nonzero.
      *
+     *  Class Scoped Enumerations
+     *  -------------------------
+     *  - ringbuffer::overwrite_policy [default: no_overwrite]
+     *      controls behavior of the container when capacity == 0:
+     *      if the value is equal to overwrite, then upon a call to
+     *      push/push_back or emplace/emplace_back the value held previously at
+     *      the front of the buffer is overwritten; if the value is equal to
+     *      no_overwrite then upon a call to push/push_back or
+     *      emplace/emplace_back an exception of type std::runtime_error is
+     *      emmitted.
+     *
      *  Member Types
      *  ------------
      *  - value_type:      std::remove_cv <T>::type;
@@ -129,7 +134,7 @@ namespace
      *      [default: dsa::overwrite_policy::no_overwrite]. If the policy enum
      *      flag is equal to dsa::overwrite_policy::no_overwrite then no
      *      operation on the structure is performed and an exception of type
-     *      std::logic_error is thrown. If the policy enum flag is
+     *      std::runtime_error is thrown. If the policy enum flag is
      *      dsa::overwrite_policy::overwrite then the first element
      *      (given by front ()) of the buffer is overwritten by the new value.
      */
@@ -137,6 +142,13 @@ namespace
     class ringbuffer
     {
         static_assert (N > 0, "empty ringbuffer is not allowed");
+
+    public:
+        enum class overwrite_policy
+        {
+            no_overwrite,
+            overwrite
+        };
 
     private:
         using backing_type            = std::array <memblock <T>, N>;
@@ -870,7 +882,7 @@ namespace
          *
          * If no capacity is avaiable, then:
          *      If the overwrite policy is set to no_overwrite this method
-         *      throws an exception of type std::logic_error.
+         *      throws an exception of type std::runtime_error.
          *
          *      If the overwrite policy is set to overwrite, this method
          *      overwrites the first element of the buffer.
@@ -890,7 +902,7 @@ namespace
                 _read_location += 1;
                 _buffered = N;
             } else {
-                throw std::logic_error {"push back on full buffer"};
+                throw std::runtime_error {"push back on full buffer"};
             }
         }
 
@@ -899,7 +911,7 @@ namespace
          *
          * If no capacity is avaiable, then:
          *      If the overwrite policy is set to no_overwrite this method
-         *      throws an exception of type std::logic_error.
+         *      throws an exception of type std::runtime_error.
          *
          *      If the overwrite policy is set to overwrite, this method
          *      overwrites the first element of the buffer.
@@ -919,7 +931,7 @@ namespace
                 _read_location += 1;
                 _buffered = N;
             } else {
-                throw std::logic_error {"push back on full buffer"};
+                throw std::runtime_error {"push back on full buffer"};
             }
         }
 
@@ -939,7 +951,7 @@ namespace
          *
          * If no capacity is avaiable, then:
          *      If the overwrite policy is set to no_overwrite this method
-         *      throws an exception of type std::logic_error.
+         *      throws an exception of type std::runtime_error.
          *
          *      If the overwrite policy is set to overwrite, this method
          *      overwrites the first element of the buffer.
@@ -960,7 +972,7 @@ namespace
                 _read_location += 1;
                 _buffered = N;
             } else {
-                throw std::logic_error {"emplace back on full buffer"};
+                throw std::runtime_error {"emplace back on full buffer"};
             }
         }
 
