@@ -45,6 +45,16 @@ namespace dsa
         overwrite
     };
 
+namespace
+{
+    template <typename T>
+    struct memblock
+    {
+        alignas (alignof (typename std::remove_cv <T>::type))
+            unsigned char data [sizeof (typename std::remove_cv <T>::type)];
+    };
+}   // annonymous namespace
+
     /*
      *  Description
      *  -----------
@@ -129,13 +139,7 @@ namespace dsa
         static_assert (N > 0, "empty ringbuffer is not allowed");
 
     private:
-        struct memblock
-        {
-            alignas (alignof (typename std::remove_cv <T>::type))
-                unsigned char data [sizeof (typename std::remove_cv <T>::type)];
-        };
-
-        using backing_type            = std::array <memblock, N>;
+        using backing_type            = std::array <memblock <T>, N>;
         using backing_pointer         = typename backing_type::pointer;
         using backing_const_pointer   = typename backing_type::const_pointer;
         using backing_reference       = typename backing_type::reference;
