@@ -72,9 +72,6 @@ namespace dsa
      *      i.  all view operations are guaranteed as nothrow
      *      ii. write operations provide the strong exception safety guarantee
      *
-     *  Notice that the read operations modify the data structure (by removing
-     *  elements from the front); hence they are, in actuallity, writes.
-     *
      *  Template Parameters
      *  -------------------
      *  - T: the object type to be buffered. This type does *not* have to be
