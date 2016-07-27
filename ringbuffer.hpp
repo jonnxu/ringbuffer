@@ -200,12 +200,12 @@ namespace
              * these pointers bound the logical region with the current state of
              * the ciruclar buffer.
              */
-            U * const _lfirst;
-            U * const _llast;
+            U * _lfirst;
+            U * _llast;
 
             /* these pointers bound the address space of the backing buffer */
-            U * const _rfirst;
-            U * const _rlast;
+            U * _rfirst;
+            U * _rlast;
 
             /* checks whether the logical region is actually contiguous */
             bool logical_region_is_contiguous (void) const noexcept
@@ -234,6 +234,9 @@ namespace
                 , _rfirst {real_first}
                 , _rlast  {real_last}
             {}
+
+            iterator_impl & operator= (iterator_impl const & other) noexcept
+                = default;
 
             void swap (iterator_impl & other) noexcept
             {
@@ -506,7 +509,8 @@ namespace
         ringbuffer & operator= (ringbuffer const & other)
             noexcept (
                 std::is_nothrow_copy_constructible <T>::value &&
-                noexcept (this->clear ())
+                (std::is_trivially_destructible <T>::value ||
+                 std::is_nothrow_destructible <T>::value)
             )
         {
             this->clear ();
@@ -536,7 +540,8 @@ namespace
         ringbuffer & operator= (ringbuffer && other)
             noexcept (
                 std::is_nothrow_move_constructible <T>::value &&
-                noexcept (this->clear ())
+                (std::is_trivially_destructible <T>::value ||
+                 std::is_nothrow_destructible <T>::value)
             )
         {
             this->clear ();
