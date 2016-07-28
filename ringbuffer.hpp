@@ -32,7 +32,6 @@
 #include <exception>    // std::runtime_error
 #include <type_traits>  // std::remove_cv, std::is_nothrow_move_assignable,
                         // std::is_nothrow_copy_assignable,
-                        // std::is_trivially_destructible,
                         // std::is_nothrow_destructible
 #include <utility>      // std::forward, std::move, std::swap
 
@@ -44,8 +43,7 @@ namespace
     template <typename T>
     struct memblock
     {
-        alignas (alignof (typename std::remove_cv <T>::type))
-            unsigned char data [sizeof (typename std::remove_cv <T>::type)];
+        alignas (alignof (T)) unsigned char data [sizeof (T)];
     };
 }   // annonymous namespace
 
@@ -86,18 +84,21 @@ namespace
      *
      *  Class Scoped Enumerations
      *  -------------------------
-     *  - ringbuffer::overwrite_policy [default: no_overwrite]
-     *      controls behavior of the container when capacity == 0:
-     *      if the value is equal to overwrite, then upon a call to
-     *      push/push_back or emplace/emplace_back the value held previously at
-     *      the front of the buffer is overwritten; if the value is equal to
-     *      no_overwrite then upon a call to push/push_back or
-     *      emplace/emplace_back an exception of type std::runtime_error is
-     *      emmitted.
+     *  - ringbuffer::overwrite_policy [default: no_overwrite]:
+     *
+     *      Controls behavior of the container when capacity == 0:
+     *
+     *          if the value is equal to overwrite, then upon a call to
+     *          push/push_back or emplace/emplace_back the value held previously
+     *          at the front of the buffer is overwritten;
+     *
+     *          if the value is equal to no_overwrite, then upon a call to
+     *          push/push_back or emplace/emplace_back an exception of type
+     *          std::runtime_error is emmitted.
      *
      *  Member Types
      *  ------------
-     *  - value_type:      std::remove_cv <T>::type;
+     *  - value_type:      T;
      *  - size_type:       std::size_t;
      *  - difference_type: std::ptrdiff_t;
      *  - pointer:         value_type *;
@@ -115,8 +116,12 @@ namespace
      *  - front:      access the first element
      *  - back:       access the last element
      *
-     *  - empty: checks whether the buffer is empty
-     *  - size:  returns the number of buffered elements
+     *  - empty:    checks whether the buffer is empty
+     *  - size:     returns the number of buffered elements
+     *  - max_size: returns the maximum possible number of elements; this is
+     *              equal to N by definition.
+     *  - capacity: returns the number of elements taht can be held in currently
+     *              allocated storage; this is equal to N by definition.
      *
      *  - set_overwrite_policy: sets the overwrite policy for the container
      *  - get_overwrite_policy: returns the overwrite policy for the container
@@ -127,16 +132,6 @@ namespace
      *  - pop/pop_front:        removes the first element
      *
      *  - swap: swaps the contents. Template typename T must be Swappable.
-     *
-     *  note:
-    *       The behavior of push_back and emplace_back when capacity == 0 is
-     *      determined by the current overwrite_policy of the ringbuffer
-     *      [default: dsa::overwrite_policy::no_overwrite]. If the policy enum
-     *      flag is equal to dsa::overwrite_policy::no_overwrite then no
-     *      operation on the structure is performed and an exception of type
-     *      std::runtime_error is thrown. If the policy enum flag is
-     *      dsa::overwrite_policy::overwrite then the first element
-     *      (given by front ()) of the buffer is overwritten by the new value.
      */
     template <typename T, std::size_t N>
     class ringbuffer
@@ -146,7 +141,7 @@ namespace
     public:
         enum class overwrite_policy
         {
-            no_overwrite,
+            no_overwrite = 0,
             overwrite
         };
 
@@ -156,12 +151,6 @@ namespace
         using backing_const_pointer   = typename backing_type::const_pointer;
         using backing_reference       = typename backing_type::reference;
         using backing_const_reference = typename backing_type::const_reference;
-
-        using unqualified_type            = typename std::remove_cv <T>::type;
-        using unqualified_pointer         = unqualified_type *;
-        using unqualified_const_pointer   = unqualified_type const *;
-        using unqualified_reference       = unqualified_type *;
-        using unqualified_const_reference = unqualified_type const *;
 
         backing_type _buffer;
         std::size_t _buffered;
@@ -181,19 +170,19 @@ namespace
          * iterators to the buffer.
          */
         iterator_impl <T, N> _write_location {
-            reinterpret_cast <unqualified_pointer> (&_buffer [0]),
-            reinterpret_cast <unqualified_pointer> (_first),
-            reinterpret_cast <unqualified_pointer> (_last),
-            reinterpret_cast <unqualified_pointer> (_first),
-            reinterpret_cast <unqualified_pointer> (_last)
+            reinterpret_cast <T *> (&_buffer [0]),
+            reinterpret_cast <T *> (_first),
+            reinterpret_cast <T *> (_last),
+            reinterpret_cast <T *> (_first),
+            reinterpret_cast <T *> (_last)
         };
 
         iterator_impl <T, N> _read_location  {
-            reinterpret_cast <unqualified_pointer> (&_buffer [0]),
-            reinterpret_cast <unqualified_pointer> (_first),
-            reinterpret_cast <unqualified_pointer> (_last),
-            reinterpret_cast <unqualified_pointer> (_first),
-            reinterpret_cast <unqualified_pointer> (_last)
+            reinterpret_cast <T *> (&_buffer [0]),
+            reinterpret_cast <T *> (_first),
+            reinterpret_cast <T *> (_last),
+            reinterpret_cast <T *> (_first),
+            reinterpret_cast <T *> (_last)
         };
 
         template <typename U, std::size_t BuffSize>
@@ -457,16 +446,16 @@ namespace
         };
 
     public:
-        using value_type      = unqualified_type;
+        using value_type      = T;
         using size_type       = std::size_t;
         using difference_type = std::ptrdiff_t;
-        using pointer         = unqualified_pointer;
-        using const_pointer   = unqualified_const_pointer;
-        using reference       = unqualified_reference;
-        using const_reference = unqualified_const_reference;
+        using pointer         = value_type *;
+        using const_pointer   = value_type const *;
+        using reference       = value_type &;
+        using const_reference = value_type const &;
 
-        using iterator        = iterator_impl <T, N>;
-        using const_iterator  = iterator_impl <T const, N>;
+        using iterator        = iterator_impl <value_type, N>;
+        using const_iterator  = iterator_impl <value_type const, N>;
         using reverse_iterator       = std::reverse_iterator <iterator>;
         using const_reverse_iterator = std::reverse_iterator <const_iterator>;
 
@@ -477,7 +466,7 @@ namespace
         {}
 
         ringbuffer (ringbuffer const & other)
-            noexcept (std::is_nothrow_copy_constructible <T>::value)
+            noexcept (std::is_nothrow_copy_constructible <value_type>::value)
             : _buffer   {}
             , _buffered {other._buffered}
             , _owpolicy {other._owpolicy}
@@ -498,7 +487,7 @@ namespace
         }
 
         ringbuffer (ringbuffer && other)
-            noexcept (std::is_nothrow_move_constructible <T>::value)
+            noexcept (std::is_nothrow_move_constructible <value_type>::value)
             : _buffer   {}
             , _buffered {other._buffered}
             , _owpolicy {other._owpolicy}
@@ -520,9 +509,8 @@ namespace
 
         ringbuffer & operator= (ringbuffer const & other)
             noexcept (
-                std::is_nothrow_copy_constructible <T>::value &&
-                (std::is_trivially_destructible <T>::value ||
-                 std::is_nothrow_destructible <T>::value)
+                std::is_nothrow_copy_constructible <value_type>::value &&
+                std::is_nothrow_destructible <value_type>::value
             )
         {
             this->clear ();
@@ -551,9 +539,8 @@ namespace
 
         ringbuffer & operator= (ringbuffer && other)
             noexcept (
-                std::is_nothrow_move_constructible <T>::value &&
-                (std::is_trivially_destructible <T>::value ||
-                 std::is_nothrow_destructible <T>::value)
+                std::is_nothrow_move_constructible <value_type>::value &&
+                std::is_nothrow_destructible <value_type>::value
             )
         {
             this->clear ();
@@ -581,38 +568,20 @@ namespace
         }
 
     private:
-        template <
-            typename U = T,
-            typename = typename std::enable_if <
-                std::is_trivially_destructible <U>::value
-            >::type
-        >
-        static void destruct_element (U &) noexcept
+        static void destruct (pointer p)
+            noexcept (std::is_nothrow_destructible <value_type>::value)
         {
-            /* no-op */
-        }
-
-        template <
-            typename U = T,
-            typename = typename std::enable_if <
-                not std::is_trivially_destructible <U>::value
-            >::type,
-            bool /* no redeclare */ = bool {}
-        >
-        static void destruct_element (U & u)
-            noexcept (std::is_nothrow_destructible <U>::value)
-        {
-            u.~U ();
+            p->~value_type ();
         }
 
     public:
         ~ringbuffer (void)
-            noexcept (noexcept (destruct_element (std::declval <T &> ())))
+            noexcept (std::is_nothrow_destructible <value_type>::value)
         {
             auto it {this->end () - 1};
 
             while (_buffered > 0) {
-                destruct_element (*it);
+                destruct (it.addressof ());
                 it -= 1;
                 _buffered -= 1;
             }
@@ -621,9 +590,9 @@ namespace
         /* swaps the contents of the buffer */
         void swap (ringbuffer & other)
             noexcept (
-                std::is_nothrow_move_assignable <T>::value &&
-                std::is_nothrow_move_constructible <T>::value &&
-                std::is_nothrow_destructible <T>::value
+                std::is_nothrow_move_assignable <value_type>::value &&
+                std::is_nothrow_move_constructible <value_type>::value &&
+                std::is_nothrow_destructible <value_type>::value
             )
         {
             /* swap elements */
@@ -654,7 +623,7 @@ namespace
                     while (ob) {
                         auto const addr {ti.addressof ()};
                         new (addr) T {std::move (*oi)};
-                        destruct_element (*oi);
+                        destruct (oi.addressof ());
                         ti += 1;
                         oi += 1;
                         ob -= 1;
@@ -671,7 +640,7 @@ namespace
                     while (tb) {
                         auto const addr {oi.addressof ()};
                         new (addr) T {std::move (*ti)};
-                        destruct_element (*ti);
+                        destruct (ti.addressof ());
                         oi += 1;
                         ti += 1;
                         tb -= 1;
@@ -709,10 +678,19 @@ namespace
             return _buffered;
         }
 
-        /* returns the number of available spaces to add elements */
-        std::size_t capacity (void) const noexcept
+        /* returns the maxiumum possible number of elements */
+        constexpr std::size_t max_size (void) const noexcept
         {
-            return N - _buffered;
+            return N;
+        }
+
+        /*
+         * returns the number of elements that can be held in the current
+         * storage
+         */
+        constexpr std::size_t capacity (void) const noexcept
+        {
+            return N;
         }
 
         /* set the overwrite policy for the buffer */
@@ -779,7 +757,7 @@ namespace
         const_iterator cend (void) const noexcept
         {
             return const_iterator {
-                (_write_location + 1).addressof (),
+                _write_location.addressof (),
                 _read_location.addressof (),
                 _write_location.addressof (),
                 reinterpret_cast <pointer> (_first),
@@ -864,12 +842,12 @@ namespace
          * destructed in the reverse-order they were added.
          */
         void clear (void)
-            noexcept (noexcept (destruct_element (std::declval <T &> ())))
+            noexcept (noexcept (destruct (std::declval <pointer> ())))
         {
             auto it {this->end () - 1};
 
             while (_buffered > 0) {
-                destruct_element (*it);
+                destruct (it.addressof ());
                 it -= 1;
                 _buffered -= 1;
             }
@@ -896,11 +874,10 @@ namespace
                 _buffered += 1;
             } else if (_owpolicy == overwrite_policy::overwrite) {
                 auto const addr {_write_location.addressof ()};
-                destruct_element (*addr);
+                destruct (addr);
                 new (addr) value_type {v};
                 _write_location += 1;
                 _read_location += 1;
-                _buffered = N;
             } else {
                 throw std::runtime_error {"push back on full buffer"};
             }
@@ -925,11 +902,10 @@ namespace
                 _buffered += 1;
             } else if (_owpolicy == overwrite_policy::overwrite) {
                 auto const addr {_write_location.addressof ()};
-                destruct_element (*addr);
+                destruct (addr);
                 new (addr) value_type {std::move (v)};
                 _write_location += 1;
                 _read_location += 1;
-                _buffered = N;
             } else {
                 throw std::runtime_error {"push back on full buffer"};
             }
@@ -966,11 +942,10 @@ namespace
                 _buffered += 1;
             } else if (_owpolicy == overwrite_policy::overwrite) {
                 auto const addr {_write_location.addressof ()};
-                destruct_element (*addr);
+                destruct (addr);
                 new (addr) value_type {std::forward <Args> (args)...};
                 _write_location += 1;
                 _read_location += 1;
-                _buffered = N;
             } else {
                 throw std::runtime_error {"emplace back on full buffer"};
             }
@@ -986,10 +961,11 @@ namespace
          * removes the first element from buffer if such an element exists, and
          * otherwise does nothing.
          */
-        void pop (void) noexcept (noexcept (~T ()))
+        void pop (void)
+            noexcept (std::is_nothrow_destructible <value_type>::value)
         {
             if (_buffered > 0) {
-                destruct_element (*_read_location);
+                destruct (_read_location.addressof ());
                 _read_location += 1;
                 _buffered -= 1;
             }
