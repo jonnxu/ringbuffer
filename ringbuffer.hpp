@@ -164,12 +164,12 @@ namespace
         class iterator_impl;
 
         /*
-         * The iterators _write_location and _read_location are privileged in
+         * The iterators _tail and _head are privileged in
          * that the logical space they work in is the whole buffer. They are
          * later used to represent the bounding logical regions when creating
          * iterators to the buffer.
          */
-        iterator_impl <T, N> _write_location {
+        iterator_impl <T, N> _tail {
             reinterpret_cast <T *> (&_buffer [0]),
             reinterpret_cast <T *> (_first),
             reinterpret_cast <T *> (_last),
@@ -177,7 +177,7 @@ namespace
             reinterpret_cast <T *> (_last)
         };
 
-        iterator_impl <T, N> _read_location  {
+        iterator_impl <T, N> _head  {
             reinterpret_cast <T *> (&_buffer [0]),
             reinterpret_cast <T *> (_first),
             reinterpret_cast <T *> (_last),
@@ -471,7 +471,7 @@ namespace
             , _buffered {other._buffered}
             , _owpolicy {other._owpolicy}
         {
-            auto ti {this->_write_location};
+            auto ti {this->_tail};
             auto oi {other.cbegin ()};
             auto ob {other._buffered};
 
@@ -483,7 +483,7 @@ namespace
                 ob -= 1;
             }
 
-            this->_write_location += this->_buffered;
+            this->_tail += this->_buffered;
         }
 
         ringbuffer (ringbuffer && other)
@@ -492,7 +492,7 @@ namespace
             , _buffered {other._buffered}
             , _owpolicy {other._owpolicy}
         {
-            auto ti {this->_write_location};
+            auto ti {this->_tail};
             auto oi {other.cbegin ()};
             auto ob {other._buffered};
 
@@ -504,7 +504,7 @@ namespace
                 ob -= 1;
             }
 
-            this->_write_location += this->_buffered;
+            this->_tail += this->_buffered;
         }
 
         ringbuffer & operator= (ringbuffer const & other)
@@ -520,7 +520,7 @@ namespace
             auto ob {other._buffered};
 
             while (ob) {
-                auto const addr {this->_write_location.addressof ()};
+                auto const addr {this->_tail.addressof ()};
                 new (addr) T {*oi};
                 oi += 1;
                 ob -= 1;
@@ -531,7 +531,7 @@ namespace
                  * thrown the container remains in a consistent state.
                  */
                 this->_buffered += 1;
-                this->_write_location += 1;
+                this->_tail += 1;
             }
 
             return *this;
@@ -550,7 +550,7 @@ namespace
             auto ob {other._buffered};
 
             while (ob) {
-                auto const addr {this->_write_location.addressof ()};
+                auto const addr {this->_tail.addressof ()};
                 new (addr) T {std::move (*oi)};
                 oi += 1;
                 ob -= 1;
@@ -561,7 +561,7 @@ namespace
                  * thrown the container remains in a consistent state.
                  */
                 this->_buffered += 1;
-                this->_write_location += 1;
+                this->_tail += 1;
             }
 
             return *this;
@@ -655,11 +655,11 @@ namespace
              *   buffered elements of each.
              */
             {
-                auto const td {this->_write_location - this->_read_location};
-                auto const od {other._write_location - other._read_location};
+                auto const td {this->_tail - this->_head};
+                auto const od {other._tail - other._head};
 
-                this->_write_location += (od - td);
-                other._write_location += (td - od);
+                this->_tail += (od - td);
+                other._tail += (td - od);
 
                 std::swap (this->_buffered, other._buffered);
                 std::swap (this->_owpolicy, other._owpolicy);
@@ -709,9 +709,10 @@ namespace
         iterator begin (void) noexcept
         {
             return iterator {
-                _read_location.addressof (),
-                _read_location.addressof (),
-                _write_location.addressof (),
+                _head.addressof (),
+                _head.addressof (),
+                _tail == _head ? _tail.addressof ()
+                               : (_tail - 1).addressof (),
                 reinterpret_cast <pointer> (_first),
                 reinterpret_cast <pointer> (_last)
             };
@@ -721,9 +722,10 @@ namespace
         iterator end (void) noexcept
         {
             return iterator {
-                (_write_location + 1).addressof (),
-                _read_location.addressof (),
-                _write_location.addressof (),
+                _tail.addressof (),
+                _head.addressof (),
+                _tail == _head ? _tail.addressof ()
+                               : (_tail - 1).addressof (),
                 reinterpret_cast <pointer> (_first),
                 reinterpret_cast <pointer> (_last)
             };
@@ -745,9 +747,10 @@ namespace
         const_iterator cbegin (void) const noexcept
         {
             return const_iterator {
-                _read_location.addressof (),
-                _read_location.addressof (),
-                _write_location.addressof (),
+                _head.addressof (),
+                _head.addressof (),
+                _tail == _head ? _tail.addressof ()
+                               : (_tail - 1).addressof (),
                 reinterpret_cast <pointer> (_first),
                 reinterpret_cast <pointer> (_last)
             };
@@ -757,9 +760,10 @@ namespace
         const_iterator cend (void) const noexcept
         {
             return const_iterator {
-                _write_location.addressof (),
-                _read_location.addressof (),
-                _write_location.addressof (),
+                _tail.addressof (),
+                _head.addressof (),
+                _tail == _head ? _tail.addressof ()
+                               : (_tail - 1).addressof (),
                 reinterpret_cast <pointer> (_first),
                 reinterpret_cast <pointer> (_last)
             };
@@ -808,22 +812,22 @@ namespace
         /* returns a reference to the first element in the buffer */
         reference front (void) noexcept
         {
-            return *_read_location;
+            return *_head;
         }
 
         /* returns a reference to the first element in the buffer */
         const_reference front (void) const noexcept
         {
-            return *_read_location;
+            return *_head;
         }
 
         /* returns a reference to the last element in the buffer */
         reference back (void) noexcept
         {
             if (_buffered > 0) {
-                return _read_location [_buffered - 1];
+                return _head [_buffered - 1];
             } else {
-                return *_read_location;
+                return *_head;
             }
         }
 
@@ -831,9 +835,9 @@ namespace
         const_reference back (void) const noexcept
         {
             if (_buffered > 0) {
-                return _read_location [_buffered - 1];
+                return _head [_buffered - 1];
             } else {
-                return *_read_location;
+                return *_head;
             }
         }
 
@@ -852,7 +856,7 @@ namespace
                 _buffered -= 1;
             }
 
-            _write_location = _read_location;
+            _tail = _head;
         }
 
         /*
@@ -868,16 +872,16 @@ namespace
         void push (value_type const & v)
         {
             if (_buffered < N) {
-                auto const addr {_write_location.addressof ()};
+                auto const addr {_tail.addressof ()};
                 new (addr) value_type {v};
-                _write_location += 1;
+                _tail += 1;
                 _buffered += 1;
             } else if (_owpolicy == overwrite_policy::overwrite) {
-                auto const addr {_write_location.addressof ()};
+                auto const addr {_tail.addressof ()};
                 destruct (addr);
                 new (addr) value_type {v};
-                _write_location += 1;
-                _read_location += 1;
+                _tail += 1;
+                _head += 1;
             } else {
                 throw std::runtime_error {"push back on full buffer"};
             }
@@ -896,16 +900,16 @@ namespace
         void push (value_type && v)
         {
             if (_buffered < N) {
-                auto const addr {_write_location.addressof ()};
+                auto const addr {_tail.addressof ()};
                 new (addr) value_type {std::move (v)};
-                _write_location += 1;
+                _tail += 1;
                 _buffered += 1;
             } else if (_owpolicy == overwrite_policy::overwrite) {
-                auto const addr {_write_location.addressof ()};
+                auto const addr {_tail.addressof ()};
                 destruct (addr);
                 new (addr) value_type {std::move (v)};
-                _write_location += 1;
-                _read_location += 1;
+                _tail += 1;
+                _head += 1;
             } else {
                 throw std::runtime_error {"push back on full buffer"};
             }
@@ -936,16 +940,16 @@ namespace
         void emplace (Args && ... args)
         {
             if (_buffered < N) {
-                auto const addr {_write_location.addressof ()};
+                auto const addr {_tail.addressof ()};
                 new (addr) value_type {std::forward <Args> (args)...};
-                _write_location += 1;
+                _tail += 1;
                 _buffered += 1;
             } else if (_owpolicy == overwrite_policy::overwrite) {
-                auto const addr {_write_location.addressof ()};
+                auto const addr {_tail.addressof ()};
                 destruct (addr);
                 new (addr) value_type {std::forward <Args> (args)...};
-                _write_location += 1;
-                _read_location += 1;
+                _tail += 1;
+                _head += 1;
             } else {
                 throw std::runtime_error {"emplace back on full buffer"};
             }
@@ -965,8 +969,8 @@ namespace
             noexcept (std::is_nothrow_destructible <value_type>::value)
         {
             if (_buffered > 0) {
-                destruct (_read_location.addressof ());
-                _read_location += 1;
+                destruct (_head.addressof ());
+                _head += 1;
                 _buffered -= 1;
             }
         }
