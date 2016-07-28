@@ -68,7 +68,7 @@ namespace
      *  If and only if the stored object type T has strong exception safe
      *  constructors is the following guaranteed:
      *
-     *  If this object is successfull constructed, then throughout the
+     *  If this object is successful constructed, then throughout the
      *  object's lifetime:
      *
      *      i.  all view operations are guaranteed as nothrow
@@ -94,7 +94,7 @@ namespace
      *
      *          if the value is equal to no_overwrite, then upon a call to
      *          push/push_back or emplace/emplace_back an exception of type
-     *          std::runtime_error is emmitted.
+     *          std::runtime_error is emitted.
      *
      *  Member Types
      *  ------------
@@ -120,7 +120,7 @@ namespace
      *  - size:     returns the number of buffered elements
      *  - max_size: returns the maximum possible number of elements; this is
      *              equal to N by definition.
-     *  - capacity: returns the number of elements taht can be held in currently
+     *  - capacity: returns the number of elements that can be held in currently
      *              allocated storage; this is equal to N by definition.
      *
      *  - set_overwrite_policy: sets the overwrite policy for the container
@@ -164,7 +164,7 @@ namespace
         class iterator_impl;
 
         /*
-         * The iterators _write_location and _read_location are priviledged in
+         * The iterators _write_location and _read_location are privileged in
          * that the logical space they work in is the whole buffer. They are
          * later used to represent the bounding logical regions when creating
          * iterators to the buffer.
@@ -199,7 +199,7 @@ namespace
 
             /*
              * these pointers bound the logical region with the current state of
-             * the ciruclar buffer.
+             * the circular buffer.
              */
             U * _lfirst;
             U * _llast;
@@ -399,19 +399,19 @@ namespace
 
             bool operator< (iterator_impl const & rhs) const
             {
-                /* locigal: return this->_iter < rhs._iter; */
+                /* logical: return this->_iter < rhs._iter; */
                 return rhs - *this > 0;
             }
 
             bool operator> (iterator_impl const & rhs) const
             {
-                /* locigal: return _iter > rhs._iter; */
+                /* logical: return _iter > rhs._iter; */
                 return *this - rhs > 0;
             }
 
             bool operator<= (iterator_impl const & rhs) const
             {
-                /* locigal: return _iter <= rhs._iter; */
+                /* logical: return _iter <= rhs._iter; */
                 if (*this == rhs) {
                     return true;
                 } else {
@@ -421,7 +421,7 @@ namespace
 
             bool operator>= (iterator_impl const & rhs) const
             {
-                /* locigal: return _iter >= rhs._iter; */
+                /* logical: return _iter >= rhs._iter; */
                 if (*this == rhs) {
                     return true;
                 } else {
@@ -607,8 +607,8 @@ namespace
 
                 /*
                  * past-the-end iterators in this implementation point at
-                 * uinitialized memory, and so once we have swapped as many
-                 * valid objects as possible we must revert to performiing
+                 * uninitialized memory, and so once we have swapped as many
+                 * valid objects as possible we must revert to performing
                  * in-place construction of elements into the correct locations.
                  */
                 if (tb <= ob) {
@@ -666,7 +666,7 @@ namespace
             }
         }
 
-        /* checks whether the buffer is emtpy */
+        /* checks whether the buffer is empty */
         bool empty (void) const noexcept
         {
             return _buffered != 0;
@@ -678,7 +678,7 @@ namespace
             return _buffered;
         }
 
-        /* returns the maxiumum possible number of elements */
+        /* returns the maximum possible number of elements */
         constexpr std::size_t max_size (void) const noexcept
         {
             return N;
@@ -858,7 +858,7 @@ namespace
         /*
          * Adds an object to the buffer if room is available.
          *
-         * If no capacity is avaiable, then:
+         * If no capacity is available, then:
          *      If the overwrite policy is set to no_overwrite this method
          *      throws an exception of type std::runtime_error.
          *
@@ -886,7 +886,7 @@ namespace
         /*
          * Adds an object to the buffer if room is available.
          *
-         * If no capacity is avaiable, then:
+         * If no capacity is available, then:
          *      If the overwrite policy is set to no_overwrite this method
          *      throws an exception of type std::runtime_error.
          *
@@ -925,7 +925,7 @@ namespace
          * Adds an object to the buffer if room is available using in-place
          * construction.
          *
-         * If no capacity is avaiable, then:
+         * If no capacity is available, then:
          *      If the overwrite policy is set to no_overwrite this method
          *      throws an exception of type std::runtime_error.
          *
