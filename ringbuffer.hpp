@@ -356,7 +356,7 @@ namespace
             difference_type operator- (iterator_impl const & rhs) const
             {
                 /* normal configuration -- non-wraparound case */
-                if (_first < _last) {
+                if (_lfirst < _llast) {
                     return this->_iter - rhs._iter;
                 /*
                  * _last is behind _first (in the address space) --
@@ -366,17 +366,17 @@ namespace
                 } else {
                     /*
                      * three cases:
-                     *  i.    both iters are above _first
-                     *  ii.   both iters are below _last
-                     *  iii.  iters are split above _first and below _last
-                     *      a. this is above _first and rhs is below _last
-                     *      b. rhs is above _first and this is below _last
+                     *  i.    both iters are above _lfirst
+                     *  ii.   both iters are below _llast
+                     *  iii.  iters are split above _lfirst and below _llast
+                     *      a. this is above _lfirst and rhs is below _llast
+                     *      b. rhs is above _lfirst and this is below _llast
                      */
-                    if (_first <= this->_iter && _first <= rhs._iter) {
+                    if (_lfirst <= this->_iter && _lfirst <= rhs._iter) {
                         return this->_iter - rhs._iter;
-                    } else if (this->_iter <= _last && rhs._iter <= _last) {
+                    } else if (this->_iter <= _llast && rhs._iter <= _llast) {
                         return this->_iter - rhs._iter;
-                    } else if (_first <= this->_iter && rhs._iter <= _last) {
+                    } else if (_lfirst <= this->_iter && rhs._iter <= _llast) {
                         return (this->_iter - rhs._iter) -
                             static_cast <difference_type> (BuffSize);
                     /* if (_first <= rhs._iter && this->_iter <= _last) */
