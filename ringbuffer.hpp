@@ -111,6 +111,32 @@ namespace
      *  - reverse_iterator:       std::reverse_iterator <iterator>;
      *  - const_reverse_iterator: std::reverse_iterator <const_iterator>;
      *
+     *  Constructors
+     *  ------------
+     *  ringbuffer (void):
+     *      - default constructs buffer; overwrite policy is defaulted
+     *      - nothrow
+     *
+     *  ringbuffer (ringbuffer const &)
+     *      - copy constructs buffer; copies overwrite policy
+     *      - nothrow if T is nothrow copy constructible
+     *
+     *  ringbuffer (ringbuffer &&)
+     *      - move constructs buffer; copies overwrite policy
+     *      - nothrow if T is nothrow move constructible
+     *
+     *  Assignment Operators
+     *  --------------------
+     *  operator= (ringbuffer const &)
+     *      - copy assigns buffer; copies overwrite policy
+     *      - nothrow if T is nothrow destructible and T is nothrow copy
+     *        constructible
+     *
+     *  operator= (ringbuffer &&)
+     *      - move assigns buffer; copies overwrite policy
+     *      - nothrow if T is nothrow destructible and T is nothrow move
+     *        constructible
+     *
      *  Member Functions
      *  ----------------
      *  - front:      access the first element
@@ -477,7 +503,7 @@ namespace
 
             while (ob) {
                 auto const addr {ti.addressof ()};
-                new (addr) T {*oi};
+                new (addr) value_type {*oi};
                 ti += 1;
                 oi += 1;
                 ob -= 1;
@@ -498,7 +524,7 @@ namespace
 
             while (ob) {
                 auto const addr {ti.addressof ()};
-                new (addr) T {std::move (*oi)};
+                new (addr) value_type {std::move (*oi)};
                 ti += 1;
                 oi += 1;
                 ob -= 1;
@@ -521,7 +547,7 @@ namespace
 
             while (ob) {
                 auto const addr {this->_tail.addressof ()};
-                new (addr) T {*oi};
+                new (addr) value_type {*oi};
                 oi += 1;
                 ob -= 1;
 
@@ -551,7 +577,7 @@ namespace
 
             while (ob) {
                 auto const addr {this->_tail.addressof ()};
-                new (addr) T {std::move (*oi)};
+                new (addr) value_type {std::move (*oi)};
                 oi += 1;
                 ob -= 1;
 
@@ -578,27 +604,26 @@ namespace
         ~ringbuffer (void)
             noexcept (std::is_nothrow_destructible <value_type>::value)
         {
-            auto it {this->end () - 1};
+            auto it {this->end ()};
 
             while (_buffered > 0) {
-                destruct (it.addressof ());
                 it -= 1;
                 _buffered -= 1;
+                destruct (it.addressof ());
             }
         }
 
         /* swaps the contents of the buffer */
         void swap (ringbuffer & other)
             noexcept (
-                std::is_nothrow_move_assignable <value_type>::value &&
+                std::is_nothrow_destructible <value_type>::value &&
                 std::is_nothrow_move_constructible <value_type>::value &&
-                std::is_nothrow_destructible <value_type>::value
+                // TODO: replace this with a portable custom implementation
+                std::__is_nothrow_swappable <value_type>::value
             )
         {
             /* swap elements */
             {
-                using std::swap;
-
                 auto ti {this->begin ()};
                 auto oi {other.begin ()};
 
@@ -613,6 +638,7 @@ namespace
                  */
                 if (tb <= ob) {
                     while (tb) {
+                        using std::swap;
                         swap (*ti, *oi);
                         ti += 1;
                         oi += 1;
@@ -622,7 +648,7 @@ namespace
 
                     while (ob) {
                         auto const addr {ti.addressof ()};
-                        new (addr) T {std::move (*oi)};
+                        new (addr) value_type {std::move (*oi)};
                         destruct (oi.addressof ());
                         ti += 1;
                         oi += 1;
@@ -630,6 +656,7 @@ namespace
                     }
                 } else {
                     while (ob) {
+                        using std::swap;
                         swap (*oi, *ti);
                         oi += 1;
                         ti += 1;
@@ -639,7 +666,7 @@ namespace
 
                     while (tb) {
                         auto const addr {oi.addressof ()};
-                        new (addr) T {std::move (*ti)};
+                        new (addr) value_type {std::move (*ti)};
                         destruct (ti.addressof ());
                         oi += 1;
                         ti += 1;
@@ -812,33 +839,25 @@ namespace
         /* returns a reference to the first element in the buffer */
         reference front (void) noexcept
         {
-            return *_head;
+            return _head [0];
         }
 
         /* returns a reference to the first element in the buffer */
         const_reference front (void) const noexcept
         {
-            return *_head;
+            return _head [0];
         }
 
         /* returns a reference to the last element in the buffer */
         reference back (void) noexcept
         {
-            if (_buffered > 0) {
-                return _head [_buffered - 1];
-            } else {
-                return *_head;
-            }
+            return _tail == _head ? _tail [0] : _tail [-1];
         }
 
         /* returns a reference to the last element in the buffer */
         const_reference back (void) const noexcept
         {
-            if (_buffered > 0) {
-                return _head [_buffered - 1];
-            } else {
-                return *_head;
-            }
+            return _tail == _head ? _tail [0] : _tail [-1];
         }
 
         /*
@@ -848,12 +867,12 @@ namespace
         void clear (void)
             noexcept (noexcept (destruct (std::declval <pointer> ())))
         {
-            auto it {this->end () - 1};
+            auto it {this->end ()};
 
             while (_buffered > 0) {
-                destruct (it.addressof ());
                 it -= 1;
                 _buffered -= 1;
+                destruct (it.addressof ());
             }
 
             _tail = _head;
@@ -917,12 +936,12 @@ namespace
 
         void push_back (value_type const & v)
         {
-            return this->push (v);
+            this->push (v);
         }
 
         void push_back (value_type && v)
         {
-            return this->push (std::move (v));
+            this->push (std::move (v));
         }
 
         /*
@@ -958,7 +977,7 @@ namespace
         template <typename ... Args>
         void emplace_back (Args && ... args)
         {
-            return this->emplace (std::forward <Args> (args)...);
+            this->emplace (std::forward <Args> (args)...);
         }
 
         /*
