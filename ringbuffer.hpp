@@ -106,11 +106,6 @@ namespace
      *  - reference:       value_type &;
      *  - const_reference: value_type const &;
      *
-     *  - iterator:               models RandomAccessIterator
-     *  - const_iterator:         models RandomAccessIterator
-     *  - reverse_iterator:       std::reverse_iterator <iterator>;
-     *  - const_reverse_iterator: std::reverse_iterator <const_iterator>;
-     *
      *  Constructors
      *  ------------
      *  ringbuffer (void):
@@ -471,6 +466,9 @@ namespace
             }
         };
 
+        using iterator        = iterator_impl <T, N>;
+        using const_iterator  = iterator_impl <T const, N>;
+
     public:
         using value_type      = T;
         using size_type       = std::size_t;
@@ -479,11 +477,6 @@ namespace
         using const_pointer   = value_type const *;
         using reference       = value_type &;
         using const_reference = value_type const &;
-
-        using iterator        = iterator_impl <value_type, N>;
-        using const_iterator  = iterator_impl <value_type const, N>;
-        using reverse_iterator       = std::reverse_iterator <iterator>;
-        using const_reverse_iterator = std::reverse_iterator <const_iterator>;
 
         ringbuffer (void) noexcept
             : _buffer   {}
@@ -732,6 +725,7 @@ namespace
             return this->_owpolicy;
         }
 
+    private:
         /* returns an iterator the start of the buffer */
         iterator begin (void) noexcept
         {
@@ -795,46 +789,7 @@ namespace
                 reinterpret_cast <pointer> (_last)
             };
         }
-
-        /* returns a reverse iterator to the start of the reversed buffer */
-        reverse_iterator rbegin (void) noexcept
-        {
-            return reverse_iterator {this->end ()};
-        }
-
-        /* returns a reverse iterator to the end of the reversed buffer */
-        reverse_iterator rend (void) noexcept
-        {
-            return reverse_iterator {this->begin ()};
-        }
-
-        /*
-         * returns a const reverse iterator to the start of the reversed buffer
-         */
-        const_reverse_iterator rbegin (void) const noexcept
-        {
-            return this->crbegin ();
-        }
-
-        /* returns a const reverse iterator to the end of the reversed buffer */
-        const_reverse_iterator rend (void) const noexcept
-        {
-            return this->crend ();
-        }
-
-        /*
-         * returns a const reverse iterator to the start of the reversed buffer
-         */
-        const_iterator crbegin (void) const noexcept
-        {
-            return const_reverse_iterator {this->cend ()};
-        }
-
-        /* returns a const reverse iterator to the end of the reversed buffer */
-        const_iterator crend (void) const noexcept
-        {
-            return const_reverse_iterator {this->cbegin ()};
-        }
+    public:
 
         /* returns a reference to the first element in the buffer */
         reference front (void) noexcept
