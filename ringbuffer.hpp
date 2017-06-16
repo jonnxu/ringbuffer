@@ -689,7 +689,7 @@ namespace
         /* checks whether the buffer is empty */
         bool empty (void) const noexcept
         {
-            return _buffered != 0;
+            return _buffered == 0;
         }
 
         /* returns the number of elements stored in the buffer */
